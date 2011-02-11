@@ -1,0 +1,20 @@
+Name:                kyoto-tycoon
+Version:             0.1
+Synopsis:            Client for the Kyoto Tycoon database
+Homepage:            https://github.com/PeterScott/haskell-kyoto-tycoon
+License:             BSD3
+License-file:        LICENSE
+Author:              Peter Scott
+Maintainer:          pjscott@iastate.edu
+Category:            Database
+Build-type:          Simple
+Extra-source-files:  README.md
+Cabal-version:       >=1.2
+
+Library
+  Exposed-modules: Database.KyotoTycoon
+  Build-depends:   base >= 4 && < 5,
+                   bytestring >= 0.9,
+                   base64-bytestring >= 0.1,
+                   http-enumerator >= 0.3 && < 0.4
+  ghc-options:     -Wall
