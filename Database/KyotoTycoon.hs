@@ -1,19 +1,24 @@
 {-# LANGUAGE OverloadedStrings, BangPatterns #-}
 module Database.KyotoTycoon where
 
-import Network.Socket hiding (send, sendTo, recv, recvFrom)
-import Network.Socket.ByteString
+-- We need ByteStrings a lot here
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy.Char8 as L
 import Data.ByteString.Char8 (ByteString)
+-- Networking stuff
+import Network.Socket hiding (send, sendTo, recv, recvFrom)
+import Network.Socket.ByteString
+-- Parsing incrementally
 import Data.Attoparsec
 import qualified Data.Attoparsec.Char8 as P8
+-- All ByteString aggregation happens with Builders
 import Blaze.ByteString.Builder
-import Blaze.ByteString.Builder.ByteString
 import Blaze.ByteString.Builder.Char8 (fromString, fromChar)
+-- Miscellaneous imports
 import Control.Applicative hiding (many)
 import Data.Monoid
 import Data.List (foldl')
+
 import Database.KyotoTycoon.TSVRPC
 
 -- | Connection to a Kyoto Tyrant server. Accesses are not thread-safe, so if
