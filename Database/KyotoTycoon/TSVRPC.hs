@@ -33,7 +33,7 @@ base64Len str = (n + 2 - ((n + 2) `mod` 3)) `div` 3 * 4
 -- on which would produce a shorter length.
 determineEncoding :: [(ByteString, ByteString)] -> ((ByteString -> ByteString), Char)
 determineEncoding args = if b64 < ue then (Base64.encode, 'B') else (UrlEncode.quote, 'U')
-    where bothLens (_, arg) = (base64Len arg, UrlEncode.quoteLen arg)
+    where bothLens (k, v) = (base64Len k + base64Len v, UrlEncode.quoteLen k + UrlEncode.quoteLen v)
           addPair (!x1, !y1) (!x2, !y2) = (x1 + x2, y1 + y2)
           (b64, ue) = foldl' addPair (0, 0) $ map bothLens args
 
@@ -59,10 +59,10 @@ contentTypeLengthLines enc len =
 -- | Make an HTTP request. Arguments are, in order: @host@ and @port@;
 -- @command@, the name of the RPC command to execute; @argLines@, a list of
 -- @(key, value)@ pairs which are to be encoded in the body of the request. The
--- keys will not need escaping; the values should be passed unescaped. This
--- function will perform either URL encoding or Base64 encoding, whichever
--- produces the shorter result. Returns a 'Builder', for the client to use in
--- whatever grand IO scheme there may be.
+-- keys and values should be passed unescaped. This function will perform either
+-- URL encoding or Base64 encoding, whichever produces the shorter
+-- result. Returns a 'Builder', for the client to use in whatever grand IO
+-- scheme there may be.
 makeRequest :: ByteString -> ByteString -> ByteString -> [(ByteString, ByteString)] -> Builder
 makeRequest host port command argLines = 
     postLine command `mappend` hostLine host port `mappend`
@@ -72,7 +72,7 @@ makeRequest host port command argLines =
                                                  fromByteString v `mappend`
                                                  fromChar '\n') argsEnc
               len = foldl' (+) 0 $ map (\(k,v) -> (B.length k) + (B.length v) + 2) argsEnc
-              argsEnc = map (\(k,v) -> (k, encode v)) argLines
+              argsEnc = map (\(k,v) -> (encode k, encode v)) argLines
               (encode, encodingChar) = determineEncoding argLines
 
 
@@ -96,11 +96,10 @@ data ReturnStatus = StatusSuccess -- ^ the processing is done successfully.
                   | StatusUnknown        -- ^ Unknown status. Shouldn't happen.
    deriving (Read, Show, Eq)
 
-data Header = EncoderHdr ByteString --(ByteString -> ByteString)
+data Header = EncoderHdr (ByteString -> ByteString)
             | LengthHdr Int
             | OtherHdr
             | NoHdr
-              deriving Show
 
 toEol :: Parser Word8
 toEol = takeTill (==10) *> word8 10
@@ -116,14 +115,14 @@ replyLine = toStatus <$> (string "HTTP/1.1 " *> takeWhile1 P8.isDigit_w8 <* toEo
           toStatus _     = StatusUnknown
 
 -- Parse the Content-Type line, and return the decoding function.
---contentTypeLine :: Parser (ByteString -> ByteString)
+contentTypeLine :: Parser Header
 contentTypeLine = string "Type: text/tab-separated-values" *> (noEnc <|> colenc)
     where colenc = string "; colenc=" *> encChar <* P8.endOfLine
           encChar = toEnc <$> satisfy (\w -> w == 85 || w == 66)
-          toEnc 85 = EncoderHdr "UrlEncode.unquote"
-          toEnc 66 = EncoderHdr "Base64.decodeLenient"
+          toEnc 85 = EncoderHdr UrlEncode.unquote
+          toEnc 66 = EncoderHdr Base64.decodeLenient
           toEnc _  = error "Invalid value encoding from server"
-          noEnc = P8.endOfLine >> return (EncoderHdr "id")
+          noEnc = P8.endOfLine >> return (EncoderHdr id)
 
 -- Parse the Content-Length header, and return the content length, in bytes.
 contentLengthLine :: Parser Header
@@ -139,10 +138,9 @@ noHeader = P8.endOfLine >> return NoHdr
 otherHeader :: Parser Header
 otherHeader = toEol >> return OtherHdr
 
---parseHeaders :: Parser (Int, ByteString -> ByteString)
-parseHeaders = do status <- replyLine
-                  (len, enc) <- ph 0 "id"
-                  return (status, len, enc)
+-- Parse HTTP headers, not including the response line.
+parseHeaders :: Parser (Int, ByteString -> ByteString)
+parseHeaders = ph 0 id
     where ph len enc = do
             hdr <- noHeader <|> contentLine <|> otherHeader
             case hdr of
@@ -151,5 +149,43 @@ parseHeaders = do status <- replyLine
               OtherHdr     -> ph len enc
               NoHdr        -> return (len, enc)
 
-hdrs = "HTTP/1.1 200 OK\r\nServer: KyotoTycoon/0.9.33\nDate: Fri, 11 Feb 2011 03:15:30 GMT\nContent-Length: 12\nContent-Type: text/tab-separated-values; colenc=B\n\n" :: ByteString
+hdrs = "HTTP/1.1 200 OK\r\nServer: KyotoTycoon/0.9.33\nDate: Fri, 11 Feb 2011 03:15:30 GMT\nContent-Length: 12\nContent-Type: text/tab-separated-values; colenc=B\n\nNOT HEADERS" :: ByteString
+testreq = "HTTP/1.1 200 OK\r\nServer: KyotoTycoon/0.9.33\nDate: Fri, 11 Feb 2011 03:15:30 GMT\nContent-Length: 17\nContent-Type: text/tab-separated-values\n\nfoo\tbar\nbaz\tquux\n" :: ByteString
+testreq2 = "HTTP/1.1 200 OK\r\nServer: KyotoTycoon/0.9.33\nDate: Fri, 11 Feb 2011 03:15:30 GMT\nContent-Length: 24\nContent-Type: text/tab-separated-values; colenc=B\n\naWQ=\tMTIzNDU=\nYWdl\tMzE=\n" :: ByteString
+testreq3 = "HTTP/1.1 500 Server Error\r\nServer: KyotoTycoon/0.9.33\nDate: Fri, 11 Feb 2011 03:15:30 GMT\nContent-Length: 31\nContent-Type: text/tab-separated-values\n\nERROR\tBad stuff happened, man.\n" :: ByteString
 
+
+-- Parse a TSV pair, ignoring irrelevant newlines.
+parseTSVPair :: Parser (ByteString, ByteString)
+parseTSVPair = do
+  P8.skipSpace
+  key <- takeTill (==9)
+  word8 9                       -- TAB
+  value <- takeTill P8.isEndOfLine
+  P8.endOfLine
+  return (key, value)
+
+-- Parse a TSV HTTP reply. After you have received as many bytes as you're going
+-- to get, you must feed this parser a blank input, to let it know that it's
+-- reached the end. Will not attempt any decoding.
+parseTSV :: Parser [(ByteString, ByteString)]
+parseTSV = (endOfInput >> return []) <|> iter -- many parseTSVPair -- FIXME
+    where iter = do (k, v) <- parseTSVPair
+                    others <- parseTSV
+                    return $ (k, v) : others
+
+-- | Parse the entire HTTP reply from a TSV-returning operation. Does
+-- decoding. Either returns an error message with a return status, or a list of
+-- (key, value) ByteString pairs.
+parseTSVReply :: Parser (Either (ReturnStatus, ByteString) [(ByteString, ByteString)])
+parseTSVReply = do status <- replyLine
+                   (len, enc) <- parseHeaders
+                   body <- P8.take len
+                   case status of
+                     StatusSuccess -> goSuccess body enc
+                     _             -> return $ Left (status, B.takeWhile (\c -> c /= '\n' && c /= '\r') $ B.drop 6 body)
+    where goSuccess body enc = do
+            let rawPairs = case feed (parse parseTSV body) "" of
+                             Done _ x -> x
+                             _        -> fail "Problem parsing TSV from Kyoto Tycoon"
+            return $ Right $ map (\(k,v) -> (enc k, enc v)) rawPairs
