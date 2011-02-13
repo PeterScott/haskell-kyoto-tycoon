@@ -132,6 +132,7 @@ set conn db key value ttl = do
   resp <- tsvrpc conn "set" args
   return $ processGood (const ()) resp
 
+-- | @remove conn db key@ removes @key@ from @db@ (optional).
 remove :: KyotoServer -> Maybe ByteString -> ByteString -> IO (KTResult ())
 remove conn db key = do
   resp <- tsvrpc conn "remove" $ [("key", key)] `maybeArg` ("DB", db)
