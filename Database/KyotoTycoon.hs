@@ -119,6 +119,10 @@ set conn db key value ttl = do
   resp <- tsvrpc conn "set" args
   return $ processGood (const ()) resp
 
+remove :: KyotoServer -> Maybe ByteString -> ByteString -> IO (KTResult ())
+remove conn db key = do
+  resp <- tsvrpc conn "remove" $ [("key", key)] `maybeArg` ("DB", db)
+  return $ processGood (const ()) resp
 
 -----------------
 -- Debugging code
@@ -127,8 +131,9 @@ set conn db key value ttl = do
 foo = do
   conn <- connect "127.0.0.1" "1978"
   print conn
-  resp1 <- set conn Nothing "09012345678" "John Doe" (Just 12)
-  print resp1
-  resp2 <- get conn Nothing "09012345678"
-  print resp2
+  let key = "09012345678"
+  remove conn Nothing key
+  set conn Nothing key "John Doe" (Just 12)
+  Right val <- get conn Nothing key
+  B.putStrLn val
   disconnect conn
