@@ -19,6 +19,7 @@ import Blaze.ByteString.Builder.Char8 (fromString, fromChar)
 import Control.Applicative hiding (many)
 import Data.Monoid
 import Data.List (foldl')
+import Data.Maybe
 
 import Database.KyotoTycoon.TSVRPC
 
@@ -66,11 +67,14 @@ cloneConnection conn = connect (B.unpack $ kt_host conn) (B.unpack $ kt_port con
 -- TSV-RPC Requests
 -------------------
 
+-- | The result of a Kyoto Tycoon operation.
+type KTResult a = Either (ReturnStatus, ByteString) a
+
 -- | Perform a TSV-RPC request. The arguments are the command name and the (key,
 -- value) pair list to send over. Returns either a 'ReturnStatus' and an error
 -- message, or a list of (key, value) pairs from the server.
 tsvrpc :: KyotoServer -> ByteString -> [(ByteString, ByteString)] 
-       -> IO (Either (ReturnStatus, ByteString) [(ByteString, ByteString)])
+       -> IO (KTResult [(ByteString, ByteString)])
 tsvrpc conn command args = do
   let request = makeRequest (kt_host conn) (kt_port conn) command args
       sock    = kt_socket conn
@@ -81,6 +85,39 @@ tsvrpc conn command args = do
     Done _ r     -> return r
     Partial _    -> return $ Left (StatusUnknown, "Incomplete response from server")
 
+-- Transform the 'Right' argument of the return value from 'tsvrpc'
+processGood :: ([(ByteString, ByteString)] -> a)
+            -> KTResult [(ByteString, ByteString)] -> KTResult a
+processGood f (Right x) = Right (f x)
+processGood f (Left x)  = Left x
+
+-- Helper function for doing optional arguments.
+maybeArg :: [(ByteString, ByteString)] -> (ByteString, Maybe ByteString)
+         -> [(ByteString, ByteString)]
+lst `maybeArg` (name, Just value) = (name, value) : lst
+lst `maybeArg` (_,    Nothing)    = lst
+{-# INLINE maybeArg #-}
+
+-- Helper function for doing several optional arguments.
+lst `maybeArgs` args = foldl' maybeArg lst args 
+{-# INLINE maybeArgs #-}
+
+-- | @get conn db key@ gets @key@ from the optional @db@. Returns either an
+-- error or a 'ByteString'.
+get :: KyotoServer -> Maybe ByteString -> ByteString -> IO (KTResult ByteString)
+get conn db key = do
+  resp <- tsvrpc conn "get" $ [("key", key)] `maybeArg` ("DB", db)
+  return $ processGood (snd . head) resp
+
+-- | @set conn db key value ttl@ sets @key@ to @value@ in database @db@
+-- (optional) with expiration time @ttl@ (optional, in seconds).
+set :: KyotoServer -> Maybe ByteString -> ByteString -> ByteString 
+    -> Maybe Int -> IO (KTResult ())
+set conn db key value ttl = do
+  let args = [("key", key), ("value", value)] `maybeArgs` [("DB", db), ("xt", ttlBS)]
+      ttlBS = B.pack . show <$> ttl
+  resp <- tsvrpc conn "set" args
+  return $ processGood (const ()) resp
 
 
 -----------------
@@ -90,8 +127,8 @@ tsvrpc conn command args = do
 foo = do
   conn <- connect "127.0.0.1" "1978"
   print conn
-  resp <- tsvrpc conn "set" [("key", "09012345678"), ("value", "John Doe")]
-  print resp
-  resp2 <- tsvrpc conn "get" [("key", "09012345678")]
+  resp1 <- set conn Nothing "09012345678" "John Doe" (Just 12)
+  print resp1
+  resp2 <- get conn Nothing "09012345678"
   print resp2
   disconnect conn
