@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, BangPatterns #-}
-module Database.KyotoTycoon.TSVRPC (makeRequest) where
+module Database.KyotoTycoon.TSVRPC (makeRequest, parseTSVReply, ReturnStatus(..)) where
 
 -- We need ByteStrings a lot here
 import qualified Data.ByteString.Char8 as B
@@ -149,11 +149,10 @@ parseHeaders = ph 0 id
               OtherHdr     -> ph len enc
               NoHdr        -> return (len, enc)
 
-hdrs = "HTTP/1.1 200 OK\r\nServer: KyotoTycoon/0.9.33\nDate: Fri, 11 Feb 2011 03:15:30 GMT\nContent-Length: 12\nContent-Type: text/tab-separated-values; colenc=B\n\nNOT HEADERS" :: ByteString
-testreq = "HTTP/1.1 200 OK\r\nServer: KyotoTycoon/0.9.33\nDate: Fri, 11 Feb 2011 03:15:30 GMT\nContent-Length: 17\nContent-Type: text/tab-separated-values\n\nfoo\tbar\nbaz\tquux\n" :: ByteString
-testreq2 = "HTTP/1.1 200 OK\r\nServer: KyotoTycoon/0.9.33\nDate: Fri, 11 Feb 2011 03:15:30 GMT\nContent-Length: 24\nContent-Type: text/tab-separated-values; colenc=B\n\naWQ=\tMTIzNDU=\nYWdl\tMzE=\n" :: ByteString
-testreq3 = "HTTP/1.1 500 Server Error\r\nServer: KyotoTycoon/0.9.33\nDate: Fri, 11 Feb 2011 03:15:30 GMT\nContent-Length: 31\nContent-Type: text/tab-separated-values\n\nERROR\tBad stuff happened, man.\n" :: ByteString
-
+-- hdrs = "HTTP/1.1 200 OK\r\nServer: KyotoTycoon/0.9.33\nDate: Fri, 11 Feb 2011 03:15:30 GMT\nContent-Length: 12\nContent-Type: text/tab-separated-values; colenc=B\n\nNOT HEADERS" :: ByteString
+-- testreq = "HTTP/1.1 200 OK\r\nServer: KyotoTycoon/0.9.33\nDate: Fri, 11 Feb 2011 03:15:30 GMT\nContent-Length: 17\nContent-Type: text/tab-separated-values\n\nfoo\tbar\nbaz\tquux\n" :: ByteString
+-- testreq2 = "HTTP/1.1 200 OK\r\nServer: KyotoTycoon/0.9.33\nDate: Fri, 11 Feb 2011 03:15:30 GMT\nContent-Length: 24\nContent-Type: text/tab-separated-values; colenc=B\n\naWQ=\tMTIzNDU=\nYWdl\tMzE=\n" :: ByteString
+-- testreq3 = "HTTP/1.1 500 Server Error\r\nServer: KyotoTycoon/0.9.33\nDate: Fri, 11 Feb 2011 03:15:30 GMT\nContent-Length: 31\nContent-Type: text/tab-separated-values\n\nERROR\tBad stuff happened, man.\n" :: ByteString
 
 -- Parse a TSV pair, ignoring irrelevant newlines.
 parseTSVPair :: Parser (ByteString, ByteString)
