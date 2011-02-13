@@ -1,5 +1,17 @@
 {-# LANGUAGE OverloadedStrings, BangPatterns #-}
-module Database.KyotoTycoon where
+module Database.KyotoTycoon ( 
+                             -- * Connecting to the database
+                             KyotoServer
+                            , connect
+                            , disconnect
+                            , reconnect
+                            , cloneConnection
+                            , KTResult
+                            -- * Basic commands
+                            , get
+                            , set
+                            , remove                             
+                            ) where
 
 -- We need ByteStrings a lot here
 import qualified Data.ByteString.Char8 as B
@@ -19,7 +31,6 @@ import Blaze.ByteString.Builder.Char8 (fromString, fromChar)
 import Control.Applicative hiding (many)
 import Data.Monoid
 import Data.List (foldl')
-import Data.Maybe
 
 import Database.KyotoTycoon.TSVRPC
 
@@ -89,7 +100,7 @@ tsvrpc conn command args = do
 processGood :: ([(ByteString, ByteString)] -> a)
             -> KTResult [(ByteString, ByteString)] -> KTResult a
 processGood f (Right x) = Right (f x)
-processGood f (Left x)  = Left x
+processGood _ (Left x)  = Left x
 
 -- Helper function for doing optional arguments.
 maybeArg :: [(ByteString, ByteString)] -> (ByteString, Maybe ByteString)
@@ -99,6 +110,8 @@ lst `maybeArg` (_,    Nothing)    = lst
 {-# INLINE maybeArg #-}
 
 -- Helper function for doing several optional arguments.
+maybeArgs :: [(ByteString, ByteString)] -> [(ByteString, Maybe ByteString)]
+          -> [(ByteString, ByteString)]
 lst `maybeArgs` args = foldl' maybeArg lst args 
 {-# INLINE maybeArgs #-}
 
@@ -128,12 +141,13 @@ remove conn db key = do
 -- Debugging code
 -----------------
 
+foo :: IO ()
 foo = do
   conn <- connect "127.0.0.1" "1978"
   print conn
   let key = "09012345678"
-  remove conn Nothing key
-  set conn Nothing key "John Doe" (Just 12)
+  _ <- remove conn Nothing key
+  _ <- set conn Nothing key "John Doe" (Just 12)
   Right val <- get conn Nothing key
   B.putStrLn val
   disconnect conn
